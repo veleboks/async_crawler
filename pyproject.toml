@@ -1,0 +1,26 @@
+[project]
+name = "ml-homeworks"
+version = "0.1.0"
+description = "Учебные проекты и домашние задания по Python"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "aiofiles",
+    "aiohttp",
+    "aiosqlite",
+    "beautifulsoup4",
+    "lxml",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.29,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "crawler"
+
