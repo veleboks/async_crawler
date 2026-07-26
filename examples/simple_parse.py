@@ -1,9 +1,21 @@
 import asyncio
 import logging
+from typing import Any
 
 from crawler import AsyncCrawler
 
 logger = logging.getLogger(__name__)
+
+
+def log_parsed_result(result: dict[str, Any]) -> None:
+    logger.info(
+        "Страница: url=%s, title=%r, text_length=%s, links_count=%s, images_count=%s",
+        result.get("url"),
+        result.get("title"),
+        len(result.get("text") or ""),
+        len(result.get("links") or []),
+        len(result.get("images") or []),
+    )
 
 
 async def main():
@@ -20,11 +32,14 @@ async def main():
         results = await crawler.fetch_urls_and_parse(urls)
     finally:
         await crawler.close()
+
+    for result in results.values():
+        log_parsed_result(result)
+
     logger.info(
-        "Загружено %s страниц, max_concurrent=%s, результат=%s",
+        "Загружено %s страниц, max_concurrent=%s",
         len(results),
         max_concurrent,
-        results,
     )
 
 
