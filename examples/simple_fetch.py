@@ -44,7 +44,7 @@ async def run_case(max_concurrent: int):
     logger.info("Загружено %s страниц, max_concurrent=%s", len(results), max_concurrent)
 
 async def main():
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
 
     await run_case(1)
     await run_case(5)

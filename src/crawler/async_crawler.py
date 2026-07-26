@@ -1,6 +1,8 @@
 import asyncio
 import aiohttp
 import logging
+from typing import Any
+from .html_parser import HTMLParser
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +17,7 @@ class AsyncCrawler:
         else:
             self.timeout = timeout
         self.session = aiohttp.ClientSession(timeout=self.timeout)
+        self.parser = HTMLParser()
 
     async def fetch_url(self, url: str) -> str:
         logger.info("start fetching url=%s", url)
@@ -46,4 +49,19 @@ class AsyncCrawler:
 
     async def close(self):
         await self.session.close()
+
+    async def fetch_and_parse(self, url: str) -> dict[str, Any]:
+        html = await self.fetch_url(url)
+        parsed = await asyncio.to_thread(self.parser.parse_html, html, url)
+        return parsed
+
+    async def fetch_urls_and_parse(self, urls: list[str]) -> dict[str, Any]:
+        results = await asyncio.gather(*(self.fetch_and_parse(url) for url in urls), return_exceptions=True)
+        parsed_data = {}
+        for url, result in zip(urls, results):
+            if isinstance(result, BaseException):
+                self.process_exception(result, url)
+            else:
+                parsed_data[url] = result
+        return parsed_data
 
