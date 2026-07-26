@@ -1,1 +1,1 @@
-from .async_crawler import AsyncCrawler
+from .async_crawler import AsyncCrawler as AsyncCrawler

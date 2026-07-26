@@ -1,9 +1,9 @@
+import logging
+from typing import Any
+from urllib.parse import urldefrag, urljoin, urlsplit
+
 from bs4 import BeautifulSoup
 from bs4.element import Tag
-from typing import Any
-from urllib.parse import urljoin, urlsplit, urldefrag
-import logging
-
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,6 @@ class HTMLParser:
             "images": self.extract_images(soup, url),
         }
 
-
     def process_image(self, tag: Tag, base_url: str) -> dict[str, str | None] | None:
         result = {}
 
@@ -35,7 +34,9 @@ class HTMLParser:
 
         return result
 
-    def extract_images(self, soup: BeautifulSoup, url: str) -> list[dict[str, str | None]]:
+    def extract_images(
+        self, soup: BeautifulSoup, url: str
+    ) -> list[dict[str, str | None]]:
         tags = soup.find_all("img")
         images = []
         for tag in tags:
@@ -43,7 +44,6 @@ class HTMLParser:
             if image is not None:
                 images.append(image)
         return images
-
 
     def extract_metadata(self, soup: BeautifulSoup) -> dict[str, Any]:
         metadata = {}
@@ -58,13 +58,11 @@ class HTMLParser:
 
         return metadata
 
-
     def extract_title(self, soup: BeautifulSoup) -> str | None:
         tag = soup.find("title")
         if tag is None:
             return None
         return tag.get_text(separator=" ", strip=True)
-
 
     def extract_text(self, soup: BeautifulSoup, selector: str | None = None) -> str:
         if selector is not None:
@@ -73,7 +71,6 @@ class HTMLParser:
                 return ""
             return element.get_text(separator=" ", strip=True)
         return soup.get_text(separator=" ", strip=True)
-
 
     def process_link(self, href: str, base_url: str) -> str | None:
         link = href
@@ -85,15 +82,19 @@ class HTMLParser:
         except ValueError as err:
             logger.debug(
                 "Skipping invalid link: base_url=%r href=%r error=%s",
-                base_url, href, err)
+                base_url,
+                href,
+                err,
+            )
             return None
 
         if not (parsed.scheme in ["http", "https"] and parsed.hostname):
-            logger.debug("Found link '%s' has incorrect scheme or does not have hostname", link)
+            logger.debug(
+                "Found link '%s' has incorrect scheme or does not have hostname", link
+            )
             return None
 
         return link
-
 
     def extract_links(self, soup: BeautifulSoup, url: str) -> list[str]:
         tags = soup.find_all("a", href=True)
@@ -113,5 +114,3 @@ class HTMLParser:
                 links.append(link)
 
         return links
-
-

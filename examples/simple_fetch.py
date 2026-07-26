@@ -1,25 +1,31 @@
 import asyncio
-from crawler import AsyncCrawler
-import time
 import logging
-from typing import Self
+import time
 from types import TracebackType
+from typing import Self
+
+from crawler import AsyncCrawler
 
 logger = logging.getLogger(__name__)
+
 
 class TimeLogger:
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
+
     def __enter__(self) -> Self:
         self.start = time.perf_counter()
         return self
-    def __exit__(self,
-                 exc_type: type[BaseException] | None,
-                 exc_value: BaseException | None,
-                 trace: TracebackType | None
-                 ) -> bool | None:
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        trace: TracebackType | None,
+    ) -> bool | None:
         elapsed = time.perf_counter() - self.start
         self.logger.info("Elapsed %ss", elapsed)
+
 
 async def run_case(max_concurrent: int):
     urls = [
@@ -32,7 +38,6 @@ async def run_case(max_concurrent: int):
         "https://httpbingo.org/status/404",
         "https://httpbingo.org/status/500",
         "https://crawler-test.invalid/",
-
     ]
 
     with TimeLogger():
@@ -43,12 +48,13 @@ async def run_case(max_concurrent: int):
             await crawler.close()
     logger.info("Загружено %s страниц, max_concurrent=%s", len(results), max_concurrent)
 
+
 async def main():
     logging.basicConfig(level=logging.DEBUG)
 
     await run_case(1)
     await run_case(5)
 
-if __name__ == "__main__":
-	asyncio.run(main())
 
+if __name__ == "__main__":
+    asyncio.run(main())

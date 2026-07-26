@@ -1,6 +1,7 @@
-import pytest
-from crawler import AsyncCrawler
 import aiohttp
+import pytest
+
+from crawler import AsyncCrawler
 
 
 @pytest.mark.asyncio

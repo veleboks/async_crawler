@@ -1,8 +1,10 @@
 import asyncio
-from crawler import AsyncCrawler
 import logging
 
+from crawler import AsyncCrawler
+
 logger = logging.getLogger(__name__)
+
 
 async def main():
     logging.basicConfig(level=logging.DEBUG)
@@ -18,8 +20,13 @@ async def main():
         results = await crawler.fetch_urls_and_parse(urls)
     finally:
         await crawler.close()
-    logger.info("Загружено %s страниц, max_concurrent=%s, результат=%s", len(results), max_concurrent, results)
+    logger.info(
+        "Загружено %s страниц, max_concurrent=%s, результат=%s",
+        len(results),
+        max_concurrent,
+        results,
+    )
+
 
 if __name__ == "__main__":
-	asyncio.run(main())
-
+    asyncio.run(main())

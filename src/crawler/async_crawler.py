@@ -1,13 +1,18 @@
 import asyncio
-import aiohttp
 import logging
 from typing import Any
+
+import aiohttp
+
 from .html_parser import HTMLParser
 
 logger = logging.getLogger(__name__)
 
+
 class AsyncCrawler:
-    def __init__(self, max_concurrent: int = 10, timeout: aiohttp.ClientTimeout | None = None):
+    def __init__(
+        self, max_concurrent: int = 10, timeout: aiohttp.ClientTimeout | None = None
+    ):
         assert max_concurrent > 0
         self.max_concurrent = max_concurrent
         self.semaphore = asyncio.Semaphore(value=self.max_concurrent)
@@ -29,16 +34,31 @@ class AsyncCrawler:
 
     def process_exception(self, err: BaseException, url: str):
         if isinstance(err, aiohttp.ClientResponseError):
-            logger.warning("HTTP request failed url=%s status=%s error_type=%s message=%s", url, err.status, type(err).__name__, err.message)
+            logger.warning(
+                "HTTP request failed url=%s status=%s error_type=%s message=%s",
+                url,
+                err.status,
+                type(err).__name__,
+                err.message,
+            )
         elif isinstance(err, asyncio.TimeoutError):
-            logger.warning("HTTP request timed out url=%s error_type=%s", url, type(err).__name__)
+            logger.warning(
+                "HTTP request timed out url=%s error_type=%s", url, type(err).__name__
+            )
         elif isinstance(err, aiohttp.ClientError):
-            logger.warning("Network error url=%s error_type=%s message=%s", url, type(err).__name__, str(err))
+            logger.warning(
+                "Network error url=%s error_type=%s message=%s",
+                url,
+                type(err).__name__,
+                str(err),
+            )
         else:
             raise err
 
     async def fetch_urls(self, urls: list[str]) -> dict[str, str]:
-        responses = await asyncio.gather(*(self.fetch_url(url) for url in urls), return_exceptions=True)
+        responses = await asyncio.gather(
+            *(self.fetch_url(url) for url in urls), return_exceptions=True
+        )
         result = {}
         for url, response in zip(urls, responses):
             if isinstance(response, BaseException):
@@ -56,7 +76,9 @@ class AsyncCrawler:
         return parsed
 
     async def fetch_urls_and_parse(self, urls: list[str]) -> dict[str, Any]:
-        results = await asyncio.gather(*(self.fetch_and_parse(url) for url in urls), return_exceptions=True)
+        results = await asyncio.gather(
+            *(self.fetch_and_parse(url) for url in urls), return_exceptions=True
+        )
         parsed_data = {}
         for url, result in zip(urls, results):
             if isinstance(result, BaseException):
@@ -64,4 +86,3 @@ class AsyncCrawler:
             else:
                 parsed_data[url] = result
         return parsed_data
-
