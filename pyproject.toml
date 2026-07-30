@@ -1,7 +1,7 @@
 [project]
-name = "ml-homeworks"
+name = "async-crawler"
 version = "0.1.0"
-description = "Учебные проекты и домашние задания по Python"
+description = "Учебный асинхронный веб-краулер"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "aiofiles",
