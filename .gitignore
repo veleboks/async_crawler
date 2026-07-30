@@ -5,3 +5,4 @@ __pycache__/
 *.py[cod]
 
 examples/crawl_results.json
+examples/retry_report.json

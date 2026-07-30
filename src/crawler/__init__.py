@@ -1,8 +1,16 @@
 from .async_crawler import AsyncCrawler as AsyncCrawler
 from .crawl_queue import CrawlerQueue as CrawlerQueue
 from .crawl_queue import CrawlTask as CrawlTask
+from .errors import CrawlerError as CrawlerError
+from .errors import NetworkError as NetworkError
+from .errors import ParseError as ParseError
+from .errors import PermanentError as PermanentError
+from .errors import TransientError as TransientError
+from .errors import classify_request_error as classify_request_error
 from .rate_limiter import RateLimiter as RateLimiter
 from .rate_limiter import RateLimiterStats as RateLimiterStats
+from .retry_strategy import RetryStats as RetryStats
+from .retry_strategy import RetryStrategy as RetryStrategy
 from .robots_manager import RobotsDisallowedError as RobotsDisallowedError
 from .robots_manager import RobotsManager as RobotsManager
 from .robots_manager import RobotsResponse as RobotsResponse
