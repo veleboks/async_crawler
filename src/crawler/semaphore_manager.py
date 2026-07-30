@@ -1,7 +1,6 @@
 import asyncio
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import TypedDict
-from urllib.parse import urlsplit
 
 
 class SemaphoreStats(TypedDict):

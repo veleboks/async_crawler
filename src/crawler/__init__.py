@@ -2,6 +2,9 @@ from .async_crawler import AsyncCrawler as AsyncCrawler
 from .crawl_queue import CrawlerQueue as CrawlerQueue
 from .crawl_queue import CrawlTask as CrawlTask
 from .rate_limiter import RateLimiter as RateLimiter
+from .rate_limiter import RateLimiterStats as RateLimiterStats
+from .robots_manager import RobotsDisallowedError as RobotsDisallowedError
 from .robots_manager import RobotsManager as RobotsManager
 from .robots_manager import RobotsResponse as RobotsResponse
+from .robots_manager import RobotsStats as RobotsStats
 from .semaphore_manager import SemaphoreManager as SemaphoreManager

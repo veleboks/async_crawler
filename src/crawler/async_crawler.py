@@ -9,8 +9,9 @@ import aiohttp
 
 from .crawl_queue import CrawlerQueue
 from .html_parser import HTMLParser
-from .semaphore_manager import SemaphoreManager
 from .rate_limiter import RateLimiter
+from .robots_manager import RobotsDisallowedError, RobotsManager, RobotsResponse
+from .semaphore_manager import SemaphoreManager
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ class CrawlerState:
     queue: CrawlerQueue
     processed_urls: dict[str, dict[str, Any]] = field(default_factory=dict)
     failed_urls: dict[str, str] = field(default_factory=dict)
+    blocked_urls: dict[str, str] = field(default_factory=dict)
     started_at: float = field(default_factory=time.perf_counter)
 
 
@@ -27,6 +29,7 @@ class CrawlerState:
 class CrawlerResult:
     processed_urls: dict[str, dict[str, Any]]
     failed_urls: dict[str, str]
+    blocked_urls: dict[str, str]
 
 
 class AsyncCrawler:
@@ -35,43 +38,95 @@ class AsyncCrawler:
         max_concurrent: int = 10,
         max_concurrent_per_hostname: int = 2,
         timeout: aiohttp.ClientTimeout | None = None,
-    ):
-        assert max_concurrent > 0
-        assert max_concurrent_per_hostname > 0
-        self.max_concurrent = max_concurrent
-        self.max_concurrent_per_hostname = max_concurrent_per_hostname
-        self.semaphore = SemaphoreManager(
+        *,
+        requests_per_second: float = 1.0,
+        jitter: float = 0.0,
+        user_agent: str = "AsyncCrawler/1.0",
+        random_state: int | None = None,
+    ) -> None:
+        if max_concurrent <= 0:
+            raise ValueError("max_concurrent must be greater than zero")
+        if max_concurrent_per_hostname <= 0:
+            raise ValueError("max_concurrent_per_hostname must be greater than zero")
+        if not user_agent.strip():
+            raise ValueError("user_agent must not be empty")
+
+        self._max_concurrent = max_concurrent
+        self._max_concurrent_per_hostname = max_concurrent_per_hostname
+        self._semaphore = SemaphoreManager(
             max_concurrent=max_concurrent,
             max_concurrent_per_hostname=max_concurrent_per_hostname,
         )
-        self.rate_limiter = RateLimiter(max_requests_per_second=0.3, per_hostname=True)
+        self._rate_limiter = RateLimiter(
+            max_requests_per_second=requests_per_second,
+            per_hostname=True,
+            jitter=jitter,
+            random_state=random_state,
+        )
+        self._user_agent = user_agent
+
         if timeout is None:
-            self.timeout = aiohttp.ClientTimeout(total=30, sock_connect=5, sock_read=10)
-            logger.debug("Use default timeout %s", self.timeout)
+            self._timeout = aiohttp.ClientTimeout(
+                total=30, sock_connect=5, sock_read=10
+            )
+            logger.debug("Use default timeout %s", self._timeout)
         else:
-            self.timeout = timeout
-        self.session = aiohttp.ClientSession(timeout=self.timeout)
-        self.parser = HTMLParser()
+            self._timeout = timeout
+        self._session = aiohttp.ClientSession(
+            timeout=self._timeout,
+            headers={"User-Agent": self._user_agent},
+        )
+        self._parser = HTMLParser()
+        self._robots_manager = RobotsManager(
+            self._robots_fetcher,
+            user_agent=self._user_agent,
+        )
+
+    async def _robots_fetcher(self, url: str) -> RobotsResponse:
+        return await self._fetch_text(url, raise_for_status=False)
+
+    async def _fetch_text(
+        self,
+        url: str,
+        *,
+        required_delay: float = 0.0,
+        raise_for_status: bool = True,
+    ) -> RobotsResponse:
+        hostname = urlsplit(url).hostname
+        if hostname is None:
+            raise ValueError(f"hostname is required in url={url!r}")
+
+        async with (
+            self._semaphore(hostname),
+            self._rate_limiter(hostname, required_delay=required_delay),
+            self._session.get(url) as response,
+        ):
+            if raise_for_status:
+                response.raise_for_status()
+            return RobotsResponse(
+                status=response.status,
+                text=await response.text(),
+            )
 
     async def fetch_url(self, url: str) -> str:
         logger.info("start fetching url=%s", url)
 
-        hostname = urlsplit(url).hostname
-        if hostname is None:
-            raise ValueError("hostname in url is required url={url}")
+        await self._robots_manager.ensure_loaded(url)
 
-        async with (
-            self.semaphore(hostname),
-            self.rate_limiter(hostname),
-            self.session.get(url) as response,
-        ):
-            response.raise_for_status()
-            text = await response.text()
-            logger.info("succeeded fetching url=%s", url)
-            return text
+        allowed = self._robots_manager.can_fetch(url)
+        if not allowed:
+            raise RobotsDisallowedError(url)
 
-    def process_exception(self, err: BaseException, url: str):
-        if isinstance(err, aiohttp.ClientResponseError):
+        crawl_delay = self._robots_manager.get_crawl_delay(url)
+        required_delay = crawl_delay if crawl_delay is not None else 0.0
+        response = await self._fetch_text(url, required_delay=required_delay)
+        logger.info("succeeded fetching url=%s status=%s", url, response.status)
+        return response.text
+
+    def process_exception(self, err: Exception, url: str) -> None:
+        if isinstance(err, RobotsDisallowedError):
+            logger.info("Blocked by robots.txt url=%s", url)
+        elif isinstance(err, aiohttp.ClientResponseError):
             logger.warning(
                 "HTTP request failed url=%s status=%s error_type=%s message=%s",
                 url,
@@ -93,6 +148,12 @@ class AsyncCrawler:
         else:
             raise err
 
+    def _process_batch_exception(self, err: BaseException, url: str) -> None:
+        if isinstance(err, Exception):
+            self.process_exception(err, url)
+        else:
+            raise err
+
     async def fetch_urls(self, urls: list[str]) -> dict[str, str]:
         responses = await asyncio.gather(
             *(self.fetch_url(url) for url in urls), return_exceptions=True
@@ -100,17 +161,17 @@ class AsyncCrawler:
         result = {}
         for url, response in zip(urls, responses):
             if isinstance(response, BaseException):
-                self.process_exception(response, url)
+                self._process_batch_exception(response, url)
             else:
                 result[url] = response
         return result
 
-    async def close(self):
-        await self.session.close()
+    async def close(self) -> None:
+        await self._session.close()
 
     async def fetch_and_parse(self, url: str) -> dict[str, Any]:
         html = await self.fetch_url(url)
-        parsed = await asyncio.to_thread(self.parser.parse_html, html, url)
+        parsed = await asyncio.to_thread(self._parser.parse_html, html, url)
         return parsed
 
     async def fetch_urls_and_parse(self, urls: list[str]) -> dict[str, Any]:
@@ -120,7 +181,7 @@ class AsyncCrawler:
         parsed_data = {}
         for url, result in zip(urls, results):
             if isinstance(result, BaseException):
-                self.process_exception(result, url)
+                self._process_batch_exception(result, url)
             else:
                 parsed_data[url] = result
         return parsed_data
@@ -153,7 +214,9 @@ class AsyncCrawler:
                 worker.cancel()
 
         return CrawlerResult(
-            processed_urls=state.processed_urls, failed_urls=state.failed_urls
+            processed_urls=state.processed_urls,
+            failed_urls=state.failed_urls,
+            blocked_urls=state.blocked_urls,
         )
 
     async def _worker(
@@ -166,8 +229,12 @@ class AsyncCrawler:
             task = await state.queue.get_next()
             try:
                 parsed = await self.fetch_and_parse(task.url)
+            except RobotsDisallowedError as err:
+                state.blocked_urls[task.url] = str(err)
+                self.process_exception(err, task.url)
             except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-                self._record_failure(state, task.url, err)
+                state.failed_urls[task.url] = str(err)
+                self.process_exception(err, task.url)
             else:
                 state.processed_urls[task.url] = parsed
 
@@ -181,24 +248,35 @@ class AsyncCrawler:
         for url in urls:
             queue.add_url(url, depth=depth)
 
-    def _record_failure(self, state: CrawlerState, url: str, err: BaseException):
-        state.failed_urls[url] = str(err)
-        self.process_exception(err, url)
-
     def _log_progress(self, state: CrawlerState):
-        semaphore_stats = self.semaphore.get_stats()
+        semaphore_stats = self._semaphore.get_stats()
+        rate_limiter_stats = self._rate_limiter.get_stats()
+        robots_stats = self._robots_manager.get_stats()
         queue_stats = state.queue.get_stats()
-        completed = len(state.processed_urls) + len(state.failed_urls)
+        completed = (
+            len(state.processed_urls) + len(state.failed_urls) + len(state.blocked_urls)
+        )
         elapsed = time.perf_counter() - state.started_at
         speed = completed / elapsed
         logger.info(
-            "Progress stats processed=%s failed=%s pending=%s in_progress=%s active=%s seen=%s speed=%.2f page/s elapsed=%.3f",
+            "Progress processed=%s failed=%s blocked=%s pending=%s "
+            "in_progress=%s active_requests=%s seen=%s speed=%.2f pages/s "
+            "requests_started=%s average_wait=%.3fs average_interval=%.3fs "
+            "average_rate=%.2f req/s robots_fetches=%s cached_origins=%s "
+            "elapsed=%.3fs",
             len(state.processed_urls),
             len(state.failed_urls),
+            len(state.blocked_urls),
             queue_stats["pending"],
             queue_stats["in_progress"],
             semaphore_stats["active"],
             queue_stats["seen"],
             speed,
+            rate_limiter_stats.requests_started,
+            rate_limiter_stats.average_wait,
+            rate_limiter_stats.average_interval,
+            rate_limiter_stats.average_rate,
+            robots_stats.robots_fetches,
+            robots_stats.cached_origins,
             elapsed,
         )
