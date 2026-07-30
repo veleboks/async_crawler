@@ -3,12 +3,14 @@ import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 import aiohttp
 
 from .crawl_queue import CrawlerQueue
 from .html_parser import HTMLParser
 from .semaphore_manager import SemaphoreManager
+from .rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -31,17 +33,18 @@ class AsyncCrawler:
     def __init__(
         self,
         max_concurrent: int = 10,
-        max_concurrent_per_domain: int = 2,
+        max_concurrent_per_hostname: int = 2,
         timeout: aiohttp.ClientTimeout | None = None,
     ):
         assert max_concurrent > 0
-        assert max_concurrent_per_domain > 0
+        assert max_concurrent_per_hostname > 0
         self.max_concurrent = max_concurrent
-        self.max_concurrent_per_domain = max_concurrent_per_domain
+        self.max_concurrent_per_hostname = max_concurrent_per_hostname
         self.semaphore = SemaphoreManager(
             max_concurrent=max_concurrent,
-            max_concurrent_per_domain=max_concurrent_per_domain,
+            max_concurrent_per_hostname=max_concurrent_per_hostname,
         )
+        self.rate_limiter = RateLimiter(max_requests_per_second=0.3, per_hostname=True)
         if timeout is None:
             self.timeout = aiohttp.ClientTimeout(total=30, sock_connect=5, sock_read=10)
             logger.debug("Use default timeout %s", self.timeout)
@@ -52,7 +55,16 @@ class AsyncCrawler:
 
     async def fetch_url(self, url: str) -> str:
         logger.info("start fetching url=%s", url)
-        async with self.semaphore(url), self.session.get(url) as response:
+
+        hostname = urlsplit(url).hostname
+        if hostname is None:
+            raise ValueError("hostname in url is required url={url}")
+
+        async with (
+            self.semaphore(hostname),
+            self.rate_limiter(hostname),
+            self.session.get(url) as response,
+        ):
             response.raise_for_status()
             text = await response.text()
             logger.info("succeeded fetching url=%s", url)

@@ -47,7 +47,7 @@ async def main():
         "https://youtube.com",
     ]
 
-    crawler = AsyncCrawler(max_concurrent=max_concurrent, max_concurrent_per_domain=1)
+    crawler = AsyncCrawler(max_concurrent=max_concurrent, max_concurrent_per_hostname=1)
     try:
         result = await crawler.crawl(start_urls)
     finally:
